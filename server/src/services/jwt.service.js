@@ -1,13 +1,16 @@
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 
 export const signAccessToken = (userId) => {
-  return jwt.sign({ id: userId }, process.env.ACCESS_TOKEN_SECRET || 'access_secret', {
+  const jti = crypto.randomUUID();
+  return jwt.sign({ id: userId, jti }, process.env.ACCESS_TOKEN_SECRET || 'access_secret', {
     expiresIn: process.env.ACCESS_TOKEN_EXPIRY || '15m'
   });
 };
 
 export const signRefreshToken = (userId) => {
-  return jwt.sign({ id: userId }, process.env.REFRESH_TOKEN_SECRET || 'refresh_secret', {
+  const jti = crypto.randomUUID();
+  return jwt.sign({ id: userId, jti }, process.env.REFRESH_TOKEN_SECRET || 'refresh_secret', {
     expiresIn: process.env.REFRESH_TOKEN_EXPIRY || '7d'
   });
 };

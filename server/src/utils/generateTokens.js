@@ -18,6 +18,7 @@ export const generateAccessAndRefreshTokens = async (userId) => {
 
     return { accessToken, refreshToken };
   } catch (error) {
-    throw new Error('Failed to generate authentication tokens');
+    console.error('Token generation error details:', error);
+    throw new Error(`Failed to generate authentication tokens: ${error.message}`);
   }
 };

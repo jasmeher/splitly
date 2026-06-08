@@ -1,7 +1,9 @@
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
+import ApiError from '../utils/ApiError.js';
+import { asyncHandler } from '../utils/asyncHandler.js';
 
-export const protect = async (req, res, next) => {
+export const protect = asyncHandler(async (req, res, next) => {
   let token;
   if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
     try {
@@ -10,16 +12,19 @@ export const protect = async (req, res, next) => {
       
       req.user = await User.findById(decoded.id).select('-password');
       if (!req.user) {
-        return res.status(401).json({ success: false, message: 'Not authorized, user not found' });
+        throw new ApiError(401, 'User associated with this token no longer exists');
+      }
+      if (req.user.status === 'SUSPENDED') {
+        throw new ApiError(403, 'Your account has been suspended');
       }
       return next();
     } catch (error) {
-      console.error(error);
-      return res.status(401).json({ success: false, message: 'Not authorized, token failed' });
+      if (error instanceof ApiError) throw error;
+      throw new ApiError(401, 'Not authorized, token failed or expired');
     }
   }
 
   if (!token) {
-    return res.status(401).json({ success: false, message: 'Not authorized, no token provided' });
+    throw new ApiError(401, 'Not authorized, no token provided');
   }
-};
+});
