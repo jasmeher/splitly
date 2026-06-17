@@ -492,3 +492,140 @@ export const signRefreshToken = (userId) => {
 ```
 
 - **Why?** Since JWT signature outputs are deterministic based on their payload contents and creation timestamp, two tokens created for the same user within the same second would yield identical string outputs. If written to MongoDB concurrently (like during registration and login), they would trigger a duplicate key violation on the unique token index. Appending a random `jti` ensures complete cryptographic uniqueness.
+
+---
+
+## 11. Deep Dive: Group & Member Management (Access Control & Financial Guards)
+
+Managing group contexts and member actions is a core feature of any expense-sharing app like Splitwise. This module highlights two major architectural problems: **Access Privilege Hierarchies** and **Transactional State Integrity**.
+
+### 1. The Creator-Owner Lifecycle Pattern
+
+When a user calls `POST /api/v1/groups` to create a new group, we need to immediately establish that they have administration/ownership rights.
+Instead of waiting for them to add themselves later, the backend handles this in a single atomic flow inside [groups.service.js](file:///e:/Classes/MERN%20-%2012PM/Full%20Stack%20Projects/splitly/server/src/modules/groups/groups.service.js):
+
+```javascript
+export const createGroup = async (groupData, creatorId) => {
+  // Create the Group document
+  const group = await Group.create({ ...groupData, createdBy: creatorId });
+
+  // Instantly map the creator to the group with 'OWNER' permissions
+  await GroupMember.create({
+    group: group._id,
+    user: creatorId,
+    role: "OWNER",
+    isActive: true,
+  });
+
+  return group;
+};
+```
+
+### 2. Zod Conditional Validator (Adding Members)
+
+When adding a member to a group, the client can specify either the user's `email` or their exact `userId`. This creates an API design challenge:
+
+1. If we make `email` required, we can't add by `userId`.
+2. If we make both optional, a client could send an empty object `{}`, which is invalid.
+
+To solve this, we use a Zod `.refine()` conditional validation schema inside [group.validator.js](file:///e:/Classes/MERN%20-%2012PM/Full%20Stack%20Projects/splitly/server/src/validators/group.validator.js):
+
+```javascript
+export const addMemberSchema = z
+  .object({
+    email: z
+      .string()
+      .email("Invalid email address format")
+      .toLowerCase()
+      .trim()
+      .optional(),
+    userId: z
+      .string()
+      .regex(/^[0-9a-fA-F]{24}$/, "Invalid User ID format")
+      .optional(),
+    role: z.enum(["ADMIN", "MEMBER"]).optional().default("MEMBER"),
+  })
+  .refine((data) => data.email || data.userId, {
+    message:
+      "Either 'email' or 'userId' must be provided to add a group member",
+    path: ["email"],
+  });
+```
+
+- **How it works**: The schema definition marks both `email` and `userId` as optional. However, the `.refine()` block acts as a post-parse guard, checking that at least one of the fields evaluates to a truthy value. If both are missing, it throws a validation error targeting the `email` field path.
+
+### 3. Preventing Duplicate Key Violations via Soft-Deletion Reactivation
+
+In Splitly, when a user leaves a group, we do not delete their membership record. Instead, we mark it as `isActive: false` (soft deletion). This preserves their historical context (such as past expenses they participated in).
+
+However, what if a user leaves and is later added back to the group?
+If we just call `GroupMember.create()`, MongoDB will throw a **Duplicate Key Error** because of the compound unique index: `groupMemberSchema.index({ group: 1, user: 1 }, { unique: true });`.
+
+To handle this, our service checks for existing records first and reactivates them:
+
+```javascript
+const existingMember = await GroupMember.findOne({
+  group: groupId,
+  user: userToAdd._id,
+});
+if (existingMember) {
+  if (existingMember.isActive) {
+    throw new ApiError(400, "User is already an active member of this group");
+  } else {
+    // Reactivate soft-deleted membership
+    existingMember.isActive = true;
+    if (role) existingMember.role = role;
+    await existingMember.save();
+
+    // Adjust group member count
+    await Group.findByIdAndUpdate(groupId, { $inc: { memberCount: 1 } });
+    return existingMember;
+  }
+}
+```
+
+### 4. Financial Guard: Preventing Deletions of Users with Outstanding Balances
+
+In a bill-splitting application, you cannot allow a user to simply leave a group (or be removed by an admin) if they still owe money or are owed money. If they leave, the math for all remaining group expenses breaks!
+
+Our `removeMember` service validates two directions of unsettled debts before altering membership states:
+
+1. **The user owes money**: Check if there is any `ExpenseSplit` in this group belonging to this user where their `amountOwed > settledAmount` (i.e. `settlementStatus !== 'SETTLED'`).
+2. **The user is owed money**: Check if there are other users' splits for expenses that _this_ user originally paid, which remain unsettled.
+
+Here is how we execute this query in [groups.service.js](file:///e:/Classes/MERN%20-%2012PM/Full%20Stack%20Projects/splitly/server/src/modules/groups/groups.service.js):
+
+```javascript
+// 1. Fetch all active expense IDs within the group
+const groupExpenses = await Expense.find({
+  group: groupId,
+  isDeleted: { $ne: true },
+});
+const expenseIds = groupExpenses.map((e) => e._id);
+const paidExpenseIds = groupExpenses
+  .filter((e) => e.paidBy.toString() === userIdToRemove.toString())
+  .map((e) => e._id);
+
+// 2. Query for any unsettled split where the user is the debtor
+const oweSplit = await ExpenseSplit.findOne({
+  expense: { $in: expenseIds },
+  user: userIdToRemove,
+  $expr: { $gt: ["$amountOwed", "$settledAmount"] },
+});
+
+// 3. Query for any unsettled split where the user is the creditor
+const owedSplit = await ExpenseSplit.findOne({
+  expense: { $in: paidExpenseIds },
+  user: { $ne: userIdToRemove },
+  $expr: { $gt: ["$amountOwed", "$settledAmount"] },
+});
+
+if (oweSplit || owedSplit) {
+  throw new ApiError(
+    400,
+    "Member cannot be removed because they have unsettled balances in this group",
+  );
+}
+```
+
+- **Why this is powerful**: This prevents data leakage and ensures absolute mathematical parity across all shared bills. The user is forced to settle their balances (or have them settled by others) before their membership status can be deactivated.
