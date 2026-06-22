@@ -629,3 +629,92 @@ if (oweSplit || owedSplit) {
 ```
 
 - **Why this is powerful**: This prevents data leakage and ensures absolute mathematical parity across all shared bills. The user is forced to settle their balances (or have them settled by others) before their membership status can be deactivated.
+
+---
+
+## 12. Deep Dive: Expense Logging, Splitting & Calculations
+
+Logging expenses and splitting them accurately is the core engine of **Splitly**. To prevent errors (such as missing pennies from division remainders or incorrect user balances), the service layer enforces strict mathematical checks.
+
+### 1. Split Calculations & Mathematical Validation
+When a bill is logged, the service layer handles four split types inside [expenses.service.js](file:///e:/Classes/MERN%20-%2012PM/Full%20Stack%20Projects/splitly/server/src/modules/expenses/expenses.service.js):
+
+#### **A. EQUAL Split**
+If a bill is split equally (e.g., $10 split between 3 people), simple division ($3.333...) results in floating-point inconsistencies. We solve this by:
+1. Rounding each participant's share to two decimal places.
+2. Allocating any remaining fractional pennies to the last participant to ensure the split sum balances perfectly with the total amount.
+```javascript
+const count = splits.length;
+const equalShare = Math.round((amount / count) * 100) / 100;
+let runningSum = 0;
+
+splits.forEach((split, idx) => {
+  if (idx === count - 1) {
+    // The last person gets the remainder
+    split.amountOwed = Math.round((amount - runningSum) * 100) / 100;
+  } else {
+    split.amountOwed = equalShare;
+    runningSum += equalShare;
+  }
+});
+```
+
+#### **B. EXACT Split**
+Participants specify exactly how much they owe in currency values. The backend verifies that the sum of these exact amounts matches the total bill:
+```javascript
+const sum = splits.reduce((acc, split) => acc + (split.amountOwed || 0), 0);
+if (Math.round(sum * 100) / 100 !== Math.round(amount * 100) / 100) {
+  throw new ApiError(400, `Sum of individual splits (${sum}) does not equal total expense amount (${amount})`);
+}
+```
+
+#### **C. PERCENTAGE Split**
+Participants specify their share as percentages. The backend:
+1. Validates that the percentages sum to exactly `100%`.
+2. Computes the corresponding currency amount owed by each participant.
+```javascript
+const totalPct = splits.reduce((acc, split) => acc + (split.percentage || 0), 0);
+if (Math.round(totalPct * 100) / 100 !== 100) {
+  throw new ApiError(400, `Sum of percentages (${totalPct}%) must equal exactly 100%`);
+}
+```
+
+#### **D. SHARES Split**
+Participants specify their portion in weights (shares). For example, if Alice has 2 shares and Bob has 1 share, the bill is split 2:1. The backend:
+1. Calculates the sum of all shares.
+2. Computes each user's weight: `(individual shares / total shares) * total amount`.
+```javascript
+const totalShares = splits.reduce((acc, split) => acc + (split.shares || 0), 0);
+if (totalShares <= 0) {
+  throw new ApiError(400, 'Total shares must be greater than 0');
+}
+```
+
+---
+
+### 2. Group Membership Boundaries
+To prevent database formatting anomalies, an expense linked to a group must consist entirely of participants belonging to that group:
+- The creator of the expense must be an active group member.
+- The payer must be an active group member.
+- Every participant in the splits must be an active group member.
+If any participant is outside the group, the service throws a `400 Bad Request` or `403 Forbidden` error.
+
+---
+
+### 3. soft-Deletions & Balance Ledger Cleans
+When an expense is deleted, we mark `isDeleted: true` on the `Expense` document.
+Additionally, to prevent deleted expenses from corrupting active balance calculations, the corresponding `ExpenseSplit` documents are deleted from the database:
+```javascript
+export const deleteExpense = async (expenseId, userId) => {
+  const expense = await Expense.findOne({ _id: expenseId, isDeleted: { $ne: true } });
+  // Authorization checks...
+  expense.isDeleted = true;
+  await expense.save();
+
+  // Delete matching splits to clear the balance ledger
+  await ExpenseSplit.deleteMany({ expense: expenseId });
+  return expense;
+};
+```
+This guarantees that any other module querying unpaid balances (like user dashboard stats) immediately drops the deleted splits.
+
