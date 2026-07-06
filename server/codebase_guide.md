@@ -718,3 +718,46 @@ export const deleteExpense = async (expenseId, userId) => {
 ```
 This guarantees that any other module querying unpaid balances (like user dashboard stats) immediately drops the deleted splits.
 
+---
+
+## 13. Deep Dive: Settlements & Sequential Debt Resolution
+
+When a payment (settlement) is logged between a debtor and a creditor, we must resolve outstanding debts. Instead of applying payments randomly, we use a chronological matching algorithm, alongside optimal debt pathing.
+
+### 1. Sequential Split Resolution
+When User A pays User B an amount $X$:
+1. We query all active expenses paid by User B where User A owes money (`amountOwed > settledAmount`).
+2. We sort these expenses chronologically (oldest first) to settle historical debts first.
+3. We deduct the settlement amount sequentially from each split until the settlement amount is fully allocated.
+```javascript
+let remainingPayment = amount;
+for (const split of splits) {
+  const unpaid = Math.round((split.amountOwed - split.settledAmount) * 100) / 100;
+  if (unpaid <= 0) continue;
+
+  if (remainingPayment >= unpaid) {
+    split.settledAmount = split.amountOwed;
+    split.settlementStatus = 'SETTLED';
+    remainingPayment = Math.round((remainingPayment - unpaid) * 100) / 100;
+    await split.save();
+  } else {
+    split.settledAmount = Math.round((split.settledAmount + remainingPayment) * 100) / 100;
+    split.settlementStatus = 'PARTIAL';
+    remainingPayment = 0;
+    await split.save();
+    break;
+  }
+}
+```
+* **Why this is important**: This maintains the audit trail. Individual splits reflect exactly how much of that specific bill has been settled.
+
+### 2. Computing Simplified Balances
+To show users who owes what inside a group, we run the Greedy Debt Simplification algorithm:
+1. Find all active expenses in the group, and extract their unpaid splits.
+2. Build transaction legs of `{ from, to, amount }` where `from` is the owing participant, `to` is the payer, and `amount` is the outstanding portion (`amountOwed - settledAmount`).
+3. Feed these legs to `simplifyDebts()` which partitions users into debtors and creditors and greedy matches them to minimize total transactions.
+4. Populate the returned profiles with names and emails for clean display.
+
+This isolates complex mathematical calculations from the raw database collections.
+
+
