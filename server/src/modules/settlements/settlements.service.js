@@ -4,6 +4,7 @@ import ExpenseSplit from '../../models/ExpenseSplit.js';
 import Group from '../../models/Group.js';
 import GroupMember from '../../models/GroupMember.js';
 import User from '../../models/User.js';
+import Activity from '../../models/Activity.js';
 import ApiError from '../../utils/ApiError.js';
 import { simplifyDebts } from '../../utils/calculateBalances.js';
 
@@ -13,14 +14,12 @@ import { simplifyDebts } from '../../utils/calculateBalances.js';
 export const createSettlement = async (settlementData, creatorId) => {
   const { group, fromUser, toUser, amount, paymentMethod, transactionReference, note } = settlementData;
 
-  // 1. Basic user existence verification
   const payerExists = await User.findById(fromUser);
   const payeeExists = await User.findById(toUser);
   if (!payerExists || !payeeExists) {
     throw new ApiError(404, 'Payer or Payee user not found');
   }
 
-  // 2. Scoped group membership checks
   if (group) {
     const groupDoc = await Group.findById(group);
     if (!groupDoc) {
@@ -35,7 +34,6 @@ export const createSettlement = async (settlementData, creatorId) => {
     }
   }
 
-  // 3. Create the Settlement document
   const settlement = await Settlement.create({
     group: group || null,
     fromUser,
@@ -47,8 +45,6 @@ export const createSettlement = async (settlementData, creatorId) => {
     createdBy: creatorId
   });
 
-  // 4. Sequential Split Resolution
-  // Find all active expenses paid by the payee (toUser)
   const expensesQuery = {
     paidBy: toUser,
     isDeleted: { $ne: true }
@@ -56,20 +52,18 @@ export const createSettlement = async (settlementData, creatorId) => {
   if (group) {
     expensesQuery.group = group;
   } else {
-    expensesQuery.group = null; // Scope to personal/direct splits if group is null
+    expensesQuery.group = null;
   }
 
   const expenses = await Expense.find(expensesQuery);
   const expenseIds = expenses.map(e => e._id);
 
-  // Find outstanding splits belonging to the payer (fromUser) for these expenses
   const splits = await ExpenseSplit.find({
     expense: { $in: expenseIds },
     user: fromUser,
     settlementStatus: { $ne: 'SETTLED' }
   }).populate('expense');
 
-  // Sort splits chronologically (oldest expenses first)
   splits.sort((a, b) => new Date(a.expense.expenseDate) - new Date(b.expense.expenseDate));
 
   let remainingPayment = amount;
@@ -90,6 +84,20 @@ export const createSettlement = async (settlementData, creatorId) => {
       break;
     }
   }
+
+  // Log activity
+  await Activity.create({
+    group: group || null,
+    user: creatorId,
+    action: 'SETTLEMENT_CREATED',
+    metadata: {
+      amount,
+      fromUserName: payerExists.fullName,
+      toUserName: payeeExists.fullName,
+      fromUserId: fromUser,
+      toUserId: toUser
+    }
+  });
 
   return Settlement.findById(settlement._id)
     .populate('fromUser', 'name email avatar')
@@ -112,20 +120,16 @@ export const getSettlements = async (query) => {
  * Calculates and returns optimized simplified group debt transaction paths.
  */
 export const getSimplifiedDebtsForGroup = async (groupId, userId) => {
-  // 1. Authorization check: Is user an active member of this group?
   const membership = await GroupMember.findOne({ group: groupId, user: userId, isActive: true });
   if (!membership) {
     throw new ApiError(403, 'You must be an active member of this group to view its balances');
   }
 
-  // 2. Fetch all active expenses inside the group
   const expenses = await Expense.find({ group: groupId, isDeleted: { $ne: true } });
   const expenseIds = expenses.map(e => e._id);
 
-  // 3. Fetch splits for those expenses
   const splits = await ExpenseSplit.find({ expense: { $in: expenseIds } }).populate('expense');
 
-  // 4. Build raw transacting legs
   const rawTransactions = [];
   splits.forEach(split => {
     const outstanding = Math.round((split.amountOwed - split.settledAmount) * 100) / 100;
@@ -142,10 +146,8 @@ export const getSimplifiedDebtsForGroup = async (groupId, userId) => {
     }
   });
 
-  // 5. Optimize via Greedy Debt Simplifier
   const optimized = simplifyDebts(rawTransactions);
 
-  // 6. Populate user profiles
   const uniqueUserIds = [...new Set(optimized.flatMap(t => [t.from, t.to]))];
   const users = await User.find({ _id: { $in: uniqueUserIds } }).select('name email avatar');
   const userMap = users.reduce((acc, u) => {

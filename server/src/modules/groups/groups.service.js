@@ -3,6 +3,7 @@ import GroupMember from '../../models/GroupMember.js';
 import User from '../../models/User.js';
 import Expense from '../../models/Expense.js';
 import ExpenseSplit from '../../models/ExpenseSplit.js';
+import Activity from '../../models/Activity.js';
 import ApiError from '../../utils/ApiError.js';
 
 /**
@@ -16,6 +17,14 @@ export const createGroup = async (groupData, creatorId) => {
     user: creatorId,
     role: 'OWNER',
     isActive: true
+  });
+
+  // Log activity
+  await Activity.create({
+    group: group._id,
+    user: creatorId,
+    action: 'GROUP_CREATED',
+    metadata: { groupName: group.name }
   });
   
   return group;
@@ -67,6 +76,14 @@ export const updateGroup = async (groupId, groupData, userId) => {
   if (!group) {
     throw new ApiError(404, 'Group not found');
   }
+
+  // Log activity
+  await Activity.create({
+    group: groupId,
+    user: userId,
+    action: 'GROUP_UPDATED',
+    metadata: { groupName: group.name }
+  });
   
   return group;
 };
@@ -112,6 +129,15 @@ export const addMember = async (groupId, { email, userId, role }, requesterId) =
       
       // Increment memberCount
       await Group.findByIdAndUpdate(groupId, { $inc: { memberCount: 1 } });
+
+      // Log activity
+      await Activity.create({
+        group: groupId,
+        user: requesterId,
+        action: 'MEMBER_ADDED',
+        metadata: { addedUserEmail: userToAdd.email, addedUserName: userToAdd.fullName }
+      });
+
       return existingMember;
     }
   }
@@ -125,6 +151,14 @@ export const addMember = async (groupId, { email, userId, role }, requesterId) =
   
   // Increment memberCount
   await Group.findByIdAndUpdate(groupId, { $inc: { memberCount: 1 } });
+
+  // Log activity
+  await Activity.create({
+    group: groupId,
+    user: requesterId,
+    action: 'MEMBER_ADDED',
+    metadata: { addedUserEmail: userToAdd.email, addedUserName: userToAdd.fullName }
+  });
   
   return newMember;
 };
@@ -190,9 +224,20 @@ export const removeMember = async (groupId, userIdToRemove, requesterId) => {
   // Deactivate group member
   targetMember.isActive = false;
   await targetMember.save();
+
+  // Get target user details for metadata
+  const targetUser = await User.findById(userIdToRemove);
   
   // Decrement memberCount
   await Group.findByIdAndUpdate(groupId, { $inc: { memberCount: -1 } });
+
+  // Log activity
+  await Activity.create({
+    group: groupId,
+    user: requesterId,
+    action: 'MEMBER_REMOVED',
+    metadata: { removedUserName: targetUser ? targetUser.fullName : 'Unknown Member', removedUserId: userIdToRemove }
+  });
   
   return targetMember;
 };

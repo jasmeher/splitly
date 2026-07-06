@@ -1,13 +1,10 @@
 import express from 'express';
-import { handleGetDashboard } from './dashboard.controller.js';
+import { handleGetSummary, handleGetActivity } from './dashboard.controller.js';
 import { protect } from '../../middleware/auth.middleware.js';
 
-const router = Router();
+const router = express.Router();
 
-function Router() {
-  return express.Router();
-}
-
-router.get('/', protect, handleGetDashboard);
+router.get('/', protect, handleGetSummary);
+router.get('/activity', protect, handleGetActivity);
 
 export default router;

@@ -2,6 +2,7 @@ import Expense from '../../models/Expense.js';
 import ExpenseSplit from '../../models/ExpenseSplit.js';
 import Group from '../../models/Group.js';
 import GroupMember from '../../models/GroupMember.js';
+import Activity from '../../models/Activity.js';
 import ApiError from '../../utils/ApiError.js';
 
 /**
@@ -121,6 +122,14 @@ export const createExpense = async (expenseData, creatorId) => {
   }));
   await ExpenseSplit.insertMany(splitDocs);
 
+  // Log activity
+  await Activity.create({
+    group: group || null,
+    user: creatorId,
+    action: 'EXPENSE_CREATED',
+    metadata: { expenseTitle: expense.title, amount: expense.amount, expenseId: expense._id }
+  });
+
   return Expense.findById(expense._id).populate('splits');
 };
 
@@ -178,7 +187,6 @@ export const updateExpense = async (expenseId, updateData, userId) => {
 
   const { splits, amount, splitType, paidBy, group, ...rest } = updateData;
 
-  // Track if we need to rebuild splits
   const shouldRebuildSplits = splits !== undefined || amount !== undefined || splitType !== undefined || paidBy !== undefined || group !== undefined;
 
   if (shouldRebuildSplits) {
@@ -193,7 +201,6 @@ export const updateExpense = async (expenseId, updateData, userId) => {
       shares: s.shares
     }));
 
-    // Group checks
     if (finalGroup) {
       const groupDoc = await Group.findById(finalGroup);
       if (!groupDoc) {
@@ -219,13 +226,11 @@ export const updateExpense = async (expenseId, updateData, userId) => {
 
     validateAndCalculateSplits(finalAmount, finalSplitType, finalSplits);
 
-    // Save changes to Expense fields
     if (amount !== undefined) expense.amount = amount;
     if (splitType !== undefined) expense.splitType = splitType;
     if (group !== undefined) expense.group = group;
     if (paidBy !== undefined) expense.paidBy = paidBy;
 
-    // Delete old splits and insert new ones
     await ExpenseSplit.deleteMany({ expense: expenseId });
     const splitDocs = finalSplits.map(split => ({
       expense: expenseId,
@@ -239,9 +244,16 @@ export const updateExpense = async (expenseId, updateData, userId) => {
     await ExpenseSplit.insertMany(splitDocs);
   }
 
-  // Update other attributes
   Object.assign(expense, rest);
   await expense.save();
+
+  // Log activity
+  await Activity.create({
+    group: expense.group || null,
+    user: userId,
+    action: 'EXPENSE_UPDATED',
+    metadata: { expenseTitle: expense.title, amount: expense.amount, expenseId: expense._id }
+  });
 
   return Expense.findById(expenseId).populate('splits');
 };
@@ -262,8 +274,15 @@ export const deleteExpense = async (expenseId, userId) => {
   expense.isDeleted = true;
   await expense.save();
 
-  // Delete matching splits to clear the balance ledger
   await ExpenseSplit.deleteMany({ expense: expenseId });
+
+  // Log activity
+  await Activity.create({
+    group: expense.group || null,
+    user: userId,
+    action: 'EXPENSE_DELETED',
+    metadata: { expenseTitle: expense.title }
+  });
 
   return expense;
 };

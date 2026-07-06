@@ -760,4 +760,62 @@ To show users who owes what inside a group, we run the Greedy Debt Simplificatio
 
 This isolates complex mathematical calculations from the raw database collections.
 
+---
+
+## 14. Deep Dive: Dashboard Summary & Activity Logs
+
+To give users an immediate view of their finances, the dashboard aggregates individual `ExpenseSplit` records into three key metrics: **Total Owed**, **Total Owed to You**, and **Net Balance**, plus a per-friend breakdown and activity feed.
+
+### 1. Dashboard Sum Aggregation
+We calculate these numbers dynamically to keep them real-time and prevent caching inconsistencies:
+1. **Total Owed by User**: We sum the outstanding portions (`amountOwed - settledAmount`) of all splits belonging to the user where the user did *not* pay the bill.
+2. **Total Owed to User**: We find all active expenses paid by the user, and sum the outstanding portions of all splits belonging to *other* participants.
+3. **Friend Breakdown Netting**: We group outstanding debts and credits on a per-friend basis. For each friend, their balance is calculated as `credits - debts`. If the friend's net balance is positive, they owe the user; if negative, the user owes them. Friend records with exactly zero balances are filtered out.
+
+```javascript
+// Calculate debts (I owe others)
+splitsOwedByMe.forEach(split => {
+  if (split.expense && !split.expense.isDeleted && split.expense.paidBy) {
+    const creditorDoc = split.expense.paidBy;
+    if (creditorDoc._id.toString() !== userId.toString()) {
+      const outstanding = split.amountOwed - split.settledAmount;
+      totalYouOwe += outstanding;
+      // Net with friend
+      const friend = getOrInitFriend(creditorDoc);
+      friend.netBalance -= outstanding;
+    }
+  }
+});
+```
+
+---
+
+### 2. Service Activity Logging
+To populate the activity feed organically, groups, expenses, and settlements services call `Activity.create` inside their database transaction layers:
+- **GROUP_CREATED** / **GROUP_UPDATED**: Logged when groups are created or modified.
+- **MEMBER_ADDED** / **MEMBER_REMOVED**: Logged when membership changes.
+- **EXPENSE_CREATED** / **EXPENSE_UPDATED** / **EXPENSE_DELETED**: Logged when ledger splits are logged, changed, or soft-deleted.
+- **SETTLEMENT_CREATED**: Logged when a payment is registered.
+
+### 3. Consolidated Feed Query
+To show activities relevant to a user, the backend queries events matching any group the user belongs to, OR events initiated by the user directly:
+```javascript
+export const getActivityFeed = async (userId) => {
+  const memberships = await GroupMember.find({ user: userId, isActive: true }).select('group');
+  const groupIds = memberships.map(m => m.group);
+
+  return Activity.find({
+    $or: [
+      { group: { $in: groupIds } },
+      { user: userId }
+    ]
+  })
+    .populate('user', 'fullName email avatar')
+    .populate('group', 'name')
+    .sort({ createdAt: -1 })
+    .limit(50);
+};
+```
+
+
 
