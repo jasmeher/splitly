@@ -6,7 +6,7 @@ import { createExpenseSchema, updateExpenseSchema } from '../../validators/expen
 const validateSchema = (schema) => (req, res, next) => {
   const result = schema.safeParse(req.body);
   if (!result.success) {
-    const errorDetails = result.error.errors.map(err => ({
+    const errorDetails = result.error.issues.map(err => ({
       field: err.path.join('.'),
       message: err.message
     }));

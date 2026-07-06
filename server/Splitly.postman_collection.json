@@ -485,7 +485,7 @@
             "header": [],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"title\": \"Wifi Internet Connection Bill\",\n  \"description\": \"Shared fiber line\",\n  \"amount\": 1200,\n  \"paidBy\": \"605c4ac44f0b2f15582fcd1a\",\n  \"category\": \"605c4ac44f0b2f15582fcd1b\",\n  \"splitType\": \"EQUAL\",\n  \"splits\": [\n    {\n      \"user\": \"605c4ac44f0b2f15582fcd1a\",\n      \"amountOwed\": 400\n    },\n    {\n      \"user\": \"605c4ac44f0b2f15582fcd1c\",\n      \"amountOwed\": 400\n    },\n    {\n      \"user\": \"605c4ac44f0b2f15582fcd1d\",\n      \"amountOwed\": 400\n    }\n  ]\n}",
+              "raw": "{\n  \"title\": \"Wifi Internet Connection Bill\",\n  \"description\": \"Shared fiber line\",\n  \"amount\": 1200,\n  \"paidBy\": \"605c4ac44f0b2f15582fcd1a\",\n  \"category\": \"605c4ac44f0b2f15582fcd1b\",\n  \"splitType\": \"EQUAL\",\n  \"splits\": [\n    {\n      \"user\": \"605c4ac44f0b2f15582fcd1a\"\n    },\n    {\n      \"user\": \"605c4ac44f0b2f15582fcd1c\"\n    },\n    {\n      \"user\": \"605c4ac44f0b2f15582fcd1d\"\n    }\n  ]\n}",
               "options": {
                 "raw": {
                   "language": "json"
@@ -526,6 +526,99 @@
               ],
               "path": [
                 "expenses"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Expense By ID",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/expenses/605c4ac44f0b2f15582fcd1a",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "expenses",
+                "605c4ac44f0b2f15582fcd1a"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Expense",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "PUT",
+            "header": [],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Wifi Internet Connection Bill Updated\",\n  \"amount\": 1500\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/expenses/605c4ac44f0b2f15582fcd1a",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "expenses",
+                "605c4ac44f0b2f15582fcd1a"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Expense",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/expenses/605c4ac44f0b2f15582fcd1a",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "expenses",
+                "605c4ac44f0b2f15582fcd1a"
               ]
             }
           },
@@ -594,6 +687,35 @@
               ],
               "path": [
                 "settlements"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Simplified Debts",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/settlements/simplified/605c4ac44f0b2f15582fcd1f",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "settlements",
+                "simplified",
+                "605c4ac44f0b2f15582fcd1f"
               ]
             }
           },
@@ -687,6 +809,34 @@
               ],
               "path": [
                 "dashboard"
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Activity Feed",
+          "request": {
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{accessToken}}",
+                  "type": "string"
+                }
+              ]
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/dashboard/activity",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "dashboard",
+                "activity"
               ]
             }
           },

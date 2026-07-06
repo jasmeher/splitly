@@ -12,7 +12,7 @@ export const splitSchema = z.object({
   user: z.string().regex(objectIdRegex, 'Invalid User ID format'),
   
   // Validate that the user's portion of the bill is non-negative
-  amountOwed: z.number().min(0, 'Amount owed cannot be negative'),
+  amountOwed: z.number().min(0, 'Amount owed cannot be negative').optional(),
   
   // Validate optional fields required by custom split types (e.g. PERCENTAGE/SHARES)
   percentage: z.number().min(0, 'Percentage cannot be negative').max(100, 'Percentage cannot exceed 100').optional(),
@@ -66,5 +66,44 @@ export const createExpenseSchema = z.object({
     .min(1, 'At least one split record is required')
 });
 
-// Update schema represents a partial copy of create schema where all fields are optional
-export const updateExpenseSchema = createExpenseSchema.partial();
+// Update schema defining optional fields for partial updates without default overrides
+export const updateExpenseSchema = z.object({
+  title: z.string()
+    .min(1, 'Expense title is required')
+    .max(100, 'Title cannot exceed 100 characters')
+    .trim()
+    .optional(),
+  description: z.string()
+    .max(255, 'Description cannot exceed 255 characters')
+    .trim()
+    .optional(),
+  amount: z.number()
+    .positive('Expense amount must be greater than 0')
+    .optional(),
+  group: z.string()
+    .regex(objectIdRegex, 'Invalid Group ID format')
+    .nullable()
+    .optional(),
+  paidBy: z.string()
+    .regex(objectIdRegex, 'Invalid Payer User ID format')
+    .optional(),
+  category: z.string()
+    .regex(objectIdRegex, 'Invalid Category ID format')
+    .optional(),
+  splitType: z.enum(['EQUAL', 'EXACT', 'PERCENTAGE', 'SHARES'])
+    .optional(),
+  receiptUrl: z.string()
+    .trim()
+    .optional(),
+  expenseDate: z.string()
+    .datetime({ message: 'Invalid expense date format' })
+    .or(z.date())
+    .or(z.string().transform(val => new Date(val)))
+    .optional(),
+  notes: z.string()
+    .trim()
+    .optional(),
+  splits: z.array(splitSchema)
+    .min(1, 'At least one split record is required')
+    .optional()
+});
