@@ -817,5 +817,55 @@ export const getActivityFeed = async (userId) => {
 };
 ```
 
+---
+
+## 15. Client-Side Authentication Flow & api.ts Interceptor
+
+To secure the frontend and consume our cookie-based backend auth, we implement a centralized client-side SPA routing structure.
+
+### 1. Centralized Fetch Interceptor (`api.ts`)
+Instead of copying token header configuration and fetch requests across pages, we centralize this in `api.ts`. It acts as a fetch interceptor:
+- Automatically mounts the in-memory `accessToken` in the `Authorization: Bearer` header.
+- Forces `credentials: 'include'` on all requests so that the browser automatically attaches the HttpOnly `refreshToken` cookie.
+- Deduplicates access token rotation requests: If a request returns `401 Unauthorized`, we hit `/auth/refresh` to get a new access token, update memory, and retry the original request.
+```typescript
+let accessToken: string | null = null;
+let refreshPromise: Promise<string> | null = null;
+
+export const apiFetch = async (path: string, options: RequestInit = {}): Promise<any> => {
+  // Setup headers, mount accessToken...
+  let response = await fetch(`${BASE_URL}${path}`, fetchOptions);
+
+  if (response.status === 401 && !isAuthEndpoint) {
+    try {
+      const newAccessToken = await refreshAccessToken();
+      // Retry original request...
+    } catch (err) {
+      setAccessToken(null);
+      throw err;
+    }
+  }
+  return response.json();
+};
+```
+
+### 2. Auto-Restoring Session on Page Mount
+When the application first loads:
+1. `AuthContext` mounts a `useEffect` that calls `refreshAccessToken()`.
+2. The browser automatically sends the HttpOnly `refreshToken` cookie.
+3. If valid, the server returns a new access token. We save the token in memory, fetch `/users/profile`, and mark the user as authenticated. This happens transparently before rendering the app, preventing login screen flickers on refresh.
+
+### 3. Route Protection Guards
+We wrap all restricted route nodes (like `/dashboard`) with the `ProtectedRoute` component:
+```typescript
+export const ProtectedRoute: React.FC = () => {
+  const { isAuthenticated, loading } = useAuth();
+  if (loading) return <Spinner />;
+  return isAuthenticated ? <Outlet /> : <Navigate to="/login" replace />;
+};
+```
+If not logged in, they are immediately redirected to `/login`.
+
+
 
 
