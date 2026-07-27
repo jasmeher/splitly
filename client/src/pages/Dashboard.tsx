@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { Navbar } from '../components/Navbar';
 import { apiFetch } from '../api';
-import { LogOut, ArrowUpRight, ArrowDownLeft, TrendingUp, TrendingDown, Users, Award } from 'lucide-react';
+import { ArrowUpRight, ArrowDownLeft, TrendingUp, TrendingDown, Users, Award } from 'lucide-react';
 
 interface FriendBreakdown {
   user: {
@@ -20,8 +21,8 @@ interface DashboardData {
   friendsBreakdown: FriendBreakdown[];
 }
 
-export const Dashboard: React.FC = () => {
-  const { user, logout } = useAuth();
+export const Dashboard = () => {
+  const { user } = useAuth();
   const [stats, setStats] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -43,41 +44,20 @@ export const Dashboard: React.FC = () => {
 
   if (loading) {
     return (
-      <div className="flex h-screen w-screen items-center justify-center bg-[#0d0e12]">
-        <div className="h-12 w-12 animate-spin rounded-full border-4 border-emerald-500 border-t-transparent"></div>
+      <div className="min-h-screen bg-[#0b0f19] text-slate-100">
+        <Navbar />
+        <div className="flex h-[70vh] items-center justify-center">
+          <div className="h-12 w-12 animate-spin rounded-full border-4 border-emerald-500 border-t-transparent"></div>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#0b0f19] text-slate-100 font-sans px-6 py-8 overflow-hidden relative">
-      {/* Decorative Blur Ambient Lights */}
-      <div className="absolute top-[-10%] right-[-10%] h-[400px] w-[400px] rounded-full bg-emerald-500/5 blur-[120px]"></div>
-      <div className="absolute bottom-[-10%] left-[-10%] h-[400px] w-[400px] rounded-full bg-blue-500/5 blur-[120px]"></div>
+    <div className="min-h-screen bg-[#0b0f19] text-slate-100 font-sans relative">
+      <Navbar />
 
-      <div className="max-w-5xl mx-auto z-10 relative">
-        {/* Navigation / Header bar */}
-        <header className="flex items-center justify-between mb-10 border-b border-white/10 pb-6">
-          <div className="flex items-center gap-3">
-            <div className="h-10 w-10 flex items-center justify-center rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-400 text-slate-950 font-black text-xl shadow-md shadow-emerald-500/25">
-              S.
-            </div>
-            <h1 className="text-xl font-bold tracking-tight text-white">Splitly Dashboard</h1>
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="text-right hidden sm:block">
-              <p className="text-sm font-bold text-white">{user?.fullName}</p>
-              <p className="text-xs text-slate-400">@{user?.username}</p>
-            </div>
-            <button
-              onClick={logout}
-              className="flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 py-2 px-4 text-sm font-bold transition-all duration-300 hover:bg-white/10 hover:border-white/20 text-slate-300 cursor-pointer"
-            >
-              <LogOut className="h-4 w-4 text-slate-400" />
-              Sign Out
-            </button>
-          </div>
-        </header>
+      <div className="max-w-6xl mx-auto px-6 py-10 z-10 relative">
 
         {error && (
           <div className="mb-8 rounded-xl border border-red-500/20 bg-red-500/10 p-4 text-sm text-red-400">
